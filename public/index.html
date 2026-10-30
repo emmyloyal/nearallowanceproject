@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allowance: an AI agent with a budget, not a blank check</title>
+<style>
+  :root {
+    --paper: #edf0e6; --card: #f8faf3; --ink: #16213a; --muted: #5a6479; --rule: #c5ccbc;
+    --cobalt: #2748d9; --moss: #2e6a4d; --amber: #a86a0b; --brick: #a63220;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #111827; --card: #182033; --ink: #e8ecf5; --muted: #98a3bb; --rule: #2c3855;
+            --cobalt: #7f98ff; --moss: #6fcf9f; --amber: #f0b04a; --brick: #ff8a72; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 var(--sans); }
+  main { max-width: 1120px; margin: 0 auto; padding: 20px 20px 64px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; padding: 8px 0 20px; }
+  h1 { font: 600 28px/1 var(--serif); margin: 0; letter-spacing: -.01em; }
+  h1 small { display: block; font: 400 14px/1.4 var(--sans); color: var(--muted); margin-top: 6px; letter-spacing: 0; }
+  h2 { font: 600 19px/1.2 var(--serif); margin: 0 0 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font-size: 13px; border: 1px solid var(--rule); border-radius: 999px; padding: 3px 11px; background: var(--card); }
+  .chip.warn { border-color: var(--brick); color: var(--brick); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button { font: inherit; font-size: 15px; border-radius: 8px; border: 1px solid var(--ink); background: transparent; color: var(--ink); padding: 8px 14px; cursor: pointer; min-height: 40px; }
+  button.primary { background: var(--cobalt); border-color: var(--cobalt); color: #fff; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { button.primary { color: #0b1020; } }
+  button:disabled { opacity: .55; cursor: progress; }
+  button.quiet { border-color: var(--rule); color: var(--muted); }
+  :focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+  label.toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; color: var(--muted); }
+
+  /* hero: the allowance tape */
+  .tape { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 22px 24px 18px; margin-bottom: 20px; }
+  .tape-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px; }
+  .big { font: 600 64px/1 var(--serif); font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.02em; }
+  .tape-top p { margin: 0; color: var(--muted); max-width: 46ch; }
+  .rail { position: relative; height: 26px; margin: 18px 0 6px; border: 1px solid var(--ink); border-radius: 4px; overflow: hidden;
+          background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--rule) calc(10% - 1px) 10%); }
+  .rail i { position: absolute; inset: 0 auto 0 0; background: repeating-linear-gradient(135deg, var(--ink) 0 6px, color-mix(in srgb, var(--ink) 78%, var(--paper)) 6px 12px); transition: width .6s cubic-bezier(.2,.8,.2,1); }
+  .rail.hot i { background: repeating-linear-gradient(135deg, var(--brick) 0 6px, color-mix(in srgb, var(--brick) 78%, var(--paper)) 6px 12px); }
+  .scale { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .grid { display: grid; grid-template-columns: 5fr 7fr; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } .big { font-size: 48px; } }
+  section.card { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
+  textarea, input, select { font: inherit; width: 100%; padding: 9px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); color: var(--ink); }
+  textarea { min-height: 96px; resize: vertical; }
+  dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 14px 0 0; font-size: 15px; }
+  dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+  .hint { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+
+  .ask { border-left: 4px solid var(--amber); background: color-mix(in srgb, var(--amber) 9%, var(--card)); padding: 12px 14px; border-radius: 0 8px 8px 0; margin-bottom: 10px; }
+  .ask b { font-family: var(--serif); font-size: 17px; }
+  .ask .row { display: flex; gap: 8px; margin-top: 10px; }
+
+  .hold { margin: 0 0 16px; }
+  .hold .top { display: flex; justify-content: space-between; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .bar { position: relative; height: 12px; background: var(--paper); border: 1px solid var(--rule); border-radius: 3px; margin-top: 6px; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: var(--cobalt); border-radius: 2px; transition: width .5s; }
+  .bar u { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--ink); text-decoration: none; }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; }
+  .bill { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--rule); }
+  .bill:first-child { border-top: 0; }
+  .bill .memo { grid-column: 1 / -1; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+  .amt { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .st { font-size: 13px; padding: 1px 9px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+  .st.paid, .st.allow, .st.approved, .st.SUCCESS { color: var(--moss); }
+  .st.awaiting_approval, .st.needs_approval, .st.paying, .st.PROCESSING { color: var(--amber); }
+  .st.blocked, .st.deny, .st.rejected { color: var(--brick); }
+  .st.due, .st.info, .st.skip, .st.quoted { color: var(--muted); }
+
+  .entry { padding: 12px 0; border-top: 1px solid var(--rule); display: grid; grid-template-columns: 112px 1fr; gap: 4px 14px; }
+  .entry:first-child { border-top: 0; }
+  .entry b { font-weight: 600; } .entry p { margin: 2px 0 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+  .entry .q { color: var(--ink); font-variant-numeric: tabular-nums; }
+  @media (max-width: 520px) { .entry { grid-template-columns: 1fr; } }
+  form.add { display: grid; grid-template-columns: 1.3fr .7fr; gap: 8px; margin-top: 12px; }
+  form.add input.memo { grid-column: 1 / -1; } form.add button { grid-column: 1 / -1; }
+  code { font-size: 13px; overflow-wrap: anywhere; }
+  .empty { color: var(--muted); font-size: 15px; margin: 0; }
+  @media (prefers-reduced-motion: reduce) { .rail i, .bar i { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Allowance<small>An AI agent with a budget, not a blank check.</small></h1>
+    <div class="chips" id="chips" aria-live="polite"></div>
+    <div class="controls">
+      <button class="primary" id="run">Run the agent</button>
+      <label class="toggle"><input type="checkbox" id="auto" style="width:auto"> Run every 6 seconds</label>
+      <button class="quiet" id="reset">Reset demo</button>
+    </div>
+  </header>
+
+  <div class="tape" aria-labelledby="tapeLabel">
+    <div class="tape-top">
+      <div class="big" id="spent">$0.00</div>
+      <p id="tapeLabel">spent today.</p>
+    </div>
+    <div class="rail" id="rail" role="img" aria-label="Share of the daily cap spent"><i id="fill"></i></div>
+    <div class="scale" id="scale"></div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <section class="card">
+        <h2>Your instructions</h2>
+        <textarea id="policyText" aria-label="Plain-English instructions for the agent"></textarea>
+        <div class="controls" style="margin-top:10px"><button id="savePolicy">Save instructions</button></div>
+        <dl id="limits"></dl>
+        <p class="hint">The agent can only pay people on the allowlist in <code>src/policy.js</code>. Instructions change limits, never destinations.</p>
+      </section>
+      <section class="card" aria-live="polite">
+        <h2>Needs you</h2>
+        <div id="approvals"></div>
+      </section>
+      <section class="card">
+        <h2>Treasury</h2>
+        <div id="holdings"></div>
+        <p class="hint" id="treasuryNote"></p>
+      </section>
+      <section class="card">
+        <h2>Agent addresses on other chains</h2>
+        <p class="hint" style="margin-top:0">One NEAR account, many chains, via Chain Signatures.</p>
+        <div id="addr" class="hint"></div>
+      </section>
+    </div>
+    <div>
+      <section class="card">
+        <h2>Bills</h2>
+        <ul class="plain" id="bills"></ul>
+        <form class="add" id="addBill">
+          <select id="payee" aria-label="Who sent this bill"></select>
+          <input id="amount" type="number" min="0.01" step="0.01" placeholder="Amount in USD" required aria-label="Amount in USD">
+          <input class="memo" id="memo" placeholder="Memo (try telling the agent to ignore its rules)" aria-label="Memo">
+          <button type="submit">Add a bill and test the limits</button>
+        </form>
+      </section>
+      <section class="card">
+        <h2>Statement</h2>
+        <div id="log" aria-live="polite"></div>
+      </section>
+    </div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const money = (n) => '$' + Number(n).toFixed(2);
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) { if (k === 'class') el.className = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v); }
+  for (const k of kids.flat()) if (k != null) el.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return el;
+}
+const LABEL = { allow: 'Allowed', approved: 'Approved by you', needs_approval: 'Needs you', deny: 'Blocked', info: 'Note', skip: 'Skipped',
+  due: 'Due', paying: 'Paying', paid: 'Paid', blocked: 'Blocked', awaiting_approval: 'Needs you', rejected: 'Declined', quoted: 'Quoted' };
+let state = null, running = false;
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) });
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
+}
+const MODES = { demo: ['Demo: simulated settlement, no keys', ''], quotes: ['Real quotes, no funds move', ''], live: ['Live: real funds', 'warn'] };
+
+function render(s) {
+  state = s;
+  const [mLabel, mClass] = MODES[s.mode] || [s.mode, ''];
+  $('chips').replaceChildren(h('span', { class: 'chip ' + mClass }, mLabel), h('span', { class: 'chip' }, 'Brain: ' + s.brain));
+  const cap = s.policy.dailyCapUsd, pct = Math.min(100, (s.spentTodayUsd / cap) * 100);
+  $('spent').textContent = money(s.spentTodayUsd);
+  $('tapeLabel').textContent = `spent today. ${money(Math.max(0, cap - s.spentTodayUsd))} left before the agent has to stop.`;
+  $('fill').style.width = pct + '%'; $('rail').classList.toggle('hot', pct >= 90);
+  $('scale').replaceChildren(...[0, .25, .5, .75, 1].map(f => h('span', {}, money(cap * f))));
+  if (document.activeElement !== $('policyText')) $('policyText').value = s.policy.text;
+  const p = s.policy;
+  $('limits').replaceChildren(...[
+    ['Daily cap', money(p.dailyCapUsd)], ['Per payment', money(p.perTxCapUsd)], ['Asks you above', money(p.approvalAboveUsd)],
+    ['Target', Object.entries(p.targetAllocation).map(([k, v]) => `${Math.round(v * 100)}% ${k}`).join(' / ')], ['Rebalances when off by', p.rebalanceBandPct + ' points'],
+  ].flatMap(([a, b]) => [h('dt', {}, a), h('dd', {}, b)]));
+
+  $('approvals').replaceChildren(...(s.approvals.length ? s.approvals.map(a => h('div', { class: 'ask' },
+    h('b', {}, `${a.from}: ${money(a.amountUsd)}`), h('div', { class: 'hint', style: 'margin:2px 0 0' }, `${a.reason} Pays out on ${a.chain}.`),
+    h('div', { class: 'row' },
+      h('button', { class: 'primary', onclick: () => act(() => api('/api/approve', { id: a.id, approve: true })) }, 'Approve and pay'),
+      h('button', { onclick: () => act(() => api('/api/approve', { id: a.id, approve: false })) }, 'Decline')))) : [h('p', { class: 'empty' }, 'Nothing is waiting on you. Anything over your auto-approve limit shows up here.')]));
+
+  $('holdings').replaceChildren(...Object.keys(s.holdingsUsd).map(sym => {
+    const share = s.totalUsd ? s.holdingsUsd[sym] / s.totalUsd : 0, target = p.targetAllocation[sym] ?? 0;
+    return h('div', { class: 'hold' },
+      h('div', { class: 'top' }, h('b', {}, sym), h('span', {}, `${money(s.holdingsUsd[sym])} · ${Math.round(share * 100)}% (target ${Math.round(target * 100)}%)`)),
+      h('div', { class: 'bar' }, h('i', { style: `width:${share * 100}%` }), h('u', { style: `left:${target * 100}%`, title: 'Target' })));
+  }));
+  const fl = Object.values(s.inFlightUsd).reduce((a, b) => a + b, 0);
+  $('treasuryNote').textContent = (fl > 0 ? `${money(fl)} is in transit from a rebalance. ` : '') + 'The dark tick on each bar marks the target.';
+
+  const sel = $('payee');
+  if (!sel.options.length) {
+    for (const [id, pe] of Object.entries(p.payees)) sel.append(new Option(`${pe.label} (${pe.chain})`, id));
+    sel.append(new Option('Unknown vendor (not on allowlist)', 'acme-billing'));
+  }
+  $('bills').replaceChildren(...s.bills.slice().reverse().map(b => h('li', { class: 'bill' },
+    h('span', {}, h('b', {}, b.from)), h('span', {}, h('span', { class: 'amt' }, money(b.amountUsd) + ' '), h('span', { class: 'st ' + b.status }, LABEL[b.status] || b.status)),
+    b.memo ? h('span', { class: 'memo' }, b.memo) : null)));
+
+  $('log').replaceChildren(...(s.log.length ? s.log.map(e => h('div', { class: 'entry' },
+    h('div', {}, h('span', { class: 'st ' + e.decision }, LABEL[e.decision] || e.decision)),
+    h('div', {}, h('b', {}, e.title), e.detail ? h('p', {}, e.detail) : null,
+      e.quote ? h('p', { class: 'q' }, `Sold ${e.quote.sell} (about ${money(e.quote.sellUsd)}) so ${money(e.quote.receiveUsd)} lands on ${e.quote.chain}.${e.quote.simulated ? ' Simulated.' : ''}`) : null,
+      e.status && e.status !== 'QUOTED' ? h('p', {}, 'Swap status: ', h('span', { class: 'st ' + e.status }, e.status), e.destHash ? [' ', h('code', {}, e.destHash)] : null) : null,
+      e.brain ? h('p', {}, 'Planned by ' + e.brain) : null))) : [h('p', { class: 'empty' }, 'No activity yet. Press "Run the agent" to start a cycle.')]));
+}
+
+async function act(fn) { try { render(await fn()); } catch (e) { alert(e.message); } }
+$('run').addEventListener('click', async () => {
+  if (running) return; running = true; $('run').disabled = true; $('run').textContent = 'Agent is working…';
+  try { render(await api('/api/tick', {})); } catch (e) { alert(e.message); } finally { running = false; $('run').disabled = false; $('run').textContent = 'Run the agent'; }
+});
+$('reset').addEventListener('click', () => act(() => api('/api/reset', {})));
+$('savePolicy').addEventListener('click', () => act(() => api('/api/policy', { text: $('policyText').value })));
+$('addBill').addEventListener('submit', (e) => { e.preventDefault(); act(async () => { const s = await api('/api/bill', { payeeId: $('payee').value, amountUsd: $('amount').value, memo: $('memo').value }); $('amount').value = ''; $('memo').value = ''; return s; }); });
+let timer = null;
+$('auto').addEventListener('change', (e) => { clearInterval(timer); if (e.target.checked) timer = setInterval(() => $('run').click(), 6000); });
+setInterval(() => { if (!running) api('/api/state').then(render).catch(() => {}); }, 2000);
+api('/api/state').then(render);
+api('/api/addresses').then(a => {
+  $('addr').replaceChildren(a.ok
+    ? h('div', {}, h('div', {}, 'Ethereum and other EVM chains: ', h('code', {}, a.address)), h('div', {}, `Derived from ${a.account} at path "${a.path}" by ${a.contract}.`))
+    : h('div', {}, a.error, h('div', {}, `Account ${a.account}, path "${a.path}", signer ${a.contract}.`)));
+});
+</script>
+</body>
+</html>

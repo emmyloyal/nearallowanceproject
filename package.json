@@ -1,0 +1,17 @@
+{
+  "name": "allowance",
+  "version": "0.1.0",
+  "description": "An AI agent with a budget, not a blank check. Pays bills and rebalances across chains with NEAR Intents, inside limits you set.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "doctor": "node scripts/doctor.js",
+    "derive": "node scripts/derive.js"
+  },
+  "optionalDependencies": {
+    "near-api-js": "^7.4.0"
+  }
+}
